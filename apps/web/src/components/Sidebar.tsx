@@ -1,4 +1,12 @@
-export function Sidebar() {
+import { House, ListChecks } from "lucide-react";
+import type { Route } from "../lib/useRoute";
+
+const LINKS: { route: Route; href: string; label: string; icon: typeof House }[] = [
+  { route: "home", href: "#/", label: "Home", icon: House },
+  { route: "plan", href: "#/plan", label: "Plan", icon: ListChecks },
+];
+
+export function Sidebar({ route }: { route: Route }) {
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -11,17 +19,12 @@ export function Sidebar() {
       </div>
 
       <nav className="nav">
-        <a className="nav-item active" href="/" aria-current="page">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path
-              d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1v-9.5Z"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinejoin="round"
-            />
-          </svg>
-          Home
-        </a>
+        {LINKS.map(({ route: r, href, label, icon: Icon }) => (
+          <a key={r} className={`nav-item ${route === r ? "active" : ""}`} href={href} aria-current={route === r ? "page" : undefined}>
+            <Icon size={18} aria-hidden="true" />
+            {label}
+          </a>
+        ))}
       </nav>
 
       <p className="sidebar-foot">

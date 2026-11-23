@@ -1,22 +1,24 @@
 import { Star } from "./Star";
 
 type Props = {
-  pct: number;
+  age: number;
   journeyDay: number;
   bornLabel: string;
   todayLabel: string;
-  endLabel: string;
 };
 
-/** Your whole life as one line, with a marker on today and dates underneath. */
-export function LifeLine({ pct, journeyDay, bornLabel, todayLabel, endLabel }: Props) {
-  const p = Math.min(100, Math.max(0, pct));
-  // keep the today-date label inside the line near either end
-  const align = p < 15 ? "start" : p > 85 ? "end" : "center";
-
+/**
+ * Your life as one line that starts today: you are at the start, everything ahead is still unwritten.
+ * Nobody knows how long the line is, so it has no end date.
+ */
+export function LifeLine({ age, journeyDay, bornLabel, todayLabel }: Props) {
   return (
-    <div className="lifeline" role="img" aria-label={`${p.toFixed(1)}% of life lived. Today is day ${journeyDay}.`}>
-      <div className="lifeline-marker" style={{ left: `${p}%` }}>
+    <div
+      className="lifeline"
+      role="img"
+      aria-label={`Born ${bornLabel}. Today, ${todayLabel}, you are ${age}: day ${journeyDay} of your ascent. The rest is still unwritten.`}
+    >
+      <div className="lifeline-marker at-start">
         <div className="marker-label">
           <span>You are here</span>
           <strong>Day {journeyDay}</strong>
@@ -24,15 +26,14 @@ export function LifeLine({ pct, journeyDay, bornLabel, todayLabel, endLabel }: P
         <div className="marker-stem" />
       </div>
 
-      <div className="lifeline-track">
-        <div className="lifeline-fill" style={{ width: `${p}%` }} />
-        <span className="lifeline-star" style={{ left: `${p}%` }}>
+      <div className="lifeline-track open">
+        <span className="lifeline-star" style={{ left: 0 }}>
           <Star size={22} />
         </span>
       </div>
 
       <div className="lifeline-today">
-        <span className={`today-date align-${align}`} style={{ left: `${p}%` }}>
+        <span className="today-date align-start" style={{ left: 0 }}>
           {todayLabel}
         </span>
       </div>
@@ -43,8 +44,8 @@ export function LifeLine({ pct, journeyDay, bornLabel, todayLabel, endLabel }: P
           <span className="end-date">{bornLabel}</span>
         </div>
         <div className="right">
-          <span className="end-title">Age 80</span>
-          <span className="end-date">{endLabel}</span>
+          <span className="end-title">Still unwritten</span>
+          <span className="end-date">The rest is yours to shape</span>
         </div>
       </div>
     </div>

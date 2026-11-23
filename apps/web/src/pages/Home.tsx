@@ -3,14 +3,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { GoalsList, HabitsList, LockedFeature, TasksList } from "../components/DayPlan";
 import { JourneyLine } from "../components/JourneyLine";
 import { EvolutionCard, LevelsModal } from "../components/Levels";
+import { PenLine, Target } from "lucide-react";
+import { DatePicker } from "../components/DatePicker";
+import { GOAL_ICON_SET } from "../components/Icons";
 import { LifeLine } from "../components/LifeLine";
 import { StatsChart } from "../components/StatsChart";
 import { WeekStrip } from "../components/WeekStrip";
-import { addYears, daysBetween, formatLong, todayISO } from "../lib/dates";
+import { daysBetween, formatLong, todayISO } from "../lib/dates";
 import {
   HABIT_ICONS,
   activeHabits,
   dayStats,
+  habitSlotsFor,
   newId,
   type Goal,
   type Habit,
@@ -20,13 +24,13 @@ import {
 } from "../lib/progress";
 import { useStoredState } from "../lib/useStoredState";
 
-const LIFE_YEARS = 80;
 const RANGES = [7, 30, 90] as const;
 
 export function Home({ start }: { start: string }) {
   const today = todayISO();
   const [birthday, setBirthday] = useStoredState<string | null>("ascend.birthday", null);
   const [habits, setHabits] = useStoredState<Habit[]>("ascend.habits", []);
+  const [startSlots] = useStoredState<number | null>("ascend.startSlots", null);
   const [tasks, setTasks] = useStoredState<Task[]>("ascend.tasks", []);
   const [log, setLog] = useStoredState<HabitLog>("ascend.habitLog", {});
   const [goals, setGoals] = useStoredState<Goal[]>("ascend.goals", []);
@@ -36,6 +40,7 @@ export function Home({ start }: { start: string }) {
   const [showLevels, setShowLevels] = useState(false);
   const [range, setRange] = useState<(typeof RANGES)[number]>(7);
   const habitsRef = useRef<HTMLElement>(null);
+  const mainGoal = goals.find((g) => g.main && !g.achievedAt);
 
   const journeyDay = daysBetween(start, today) + 1;
 
@@ -80,8 +85,9 @@ export function Home({ start }: { start: string }) {
   const redeem = (habitId: string) => setRedeems((prev) => [...prev, { habitId, day: selected, on: today }]);
 
   const todaysHabits = activeHabits(habits, today);
+  const habitSlots = habitSlotsFor(unlocks.habitSlots, habits, start, startSlots);
   const addHabit = (name: string) => {
-    if (todaysHabits.length >= unlocks.habitSlots) return;
+    if (todaysHabits.length >= habitSlots) return;
     setHabits((prev) => [...prev, { id: newId(), name, icon: HABIT_ICONS[prev.length % HABIT_ICONS.length], createdAt: today }]);
   };
 
@@ -112,7 +118,7 @@ export function Home({ start }: { start: string }) {
       : new Date(selected + "T00:00").toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
   const pct = Math.round(sel.score * 100);
   const daysBack = daysBetween(selected, today);
-  const nextSlotAt = levelFor((u) => u.habitSlots > unlocks.habitSlots);
+  const nextSlotAt = levelFor((u) => u.habitSlots > habitSlots);
   const tasksAt = levelFor((u) => u.tasks) ?? 10;
   const goalsAt = levelFor((u) => u.goals) ?? 20;
   const stageAt = (lvl: number) => [...TIERS].reverse().find((t) => t.level <= lvl)!.name;
@@ -126,6 +132,12 @@ export function Home({ start }: { start: string }) {
           <br />
           <span className="gradient-text">Make the days count.</span>
         </h1>
+        {mainGoal && (
+          <MainGoal
+            goal={mainGoal}
+            onRename={(title) => setGoals((prev) => prev.map((g) => (g.id === mainGoal.id ? { ...g, title } : g)))}
+          />
+        )}
       </header>
 
       {toast && (
@@ -221,7 +233,10 @@ export function Home({ start }: { start: string }) {
               </h2>
               <span className="muted small">
                 {unlocks.secondChances > 0 ? `↺ ${state.secondChancesLeft}/${unlocks.secondChances} Second Chance left · ` : ""}
-                Every day
+                Every day ·{" "}
+                <a className="card-link" href="#/plan">
+                  Manage
+                </a>
               </span>
             </div>
             <HabitsList
@@ -233,7 +248,7 @@ export function Home({ start }: { start: string }) {
               doneToday={new Set(log[today] ?? [])}
               secondChancesLeft={state.secondChancesLeft}
               canRedeemDay={unlocks.secondChances > 0 && daysBack >= 1 && daysBack <= 2 && selected >= start}
-              slots={{ used: todaysHabits.length, max: unlocks.habitSlots, nextAt: nextSlotAt }}
+              slots={{ used: todaysHabits.length, max: habitSlots, nextAt: nextSlotAt }}
               onToggle={toggleHabit}
               onRedeem={redeem}
               onAdd={addHabit}
@@ -442,8 +457,8 @@ function Ring({ value }: { value: number }) {
       />
       <defs>
         <linearGradient id="ring-grad" x1="0" x2="1">
-          <stop offset="0" stopColor="#7c3aed" />
-          <stop offset="1" stopColor="#67d5ff" />
+          <stop offset="0" stopColor="#8b3fe0" />
+          <stop offset="1" stopColor="#c8a2ff" />
         </linearGradient>
       </defs>
     </svg>
@@ -499,9 +514,6 @@ function LifeCard({
   onEdit: () => void;
 }) {
   const [view, setView] = useState<"journey" | "life">("journey");
-  const end = addYears(birthday, LIFE_YEARS);
-  const pct = (daysBetween(birthday, today) / daysBetween(birthday, end)) * 100;
-
   let age = Number(today.slice(0, 4)) - Number(birthday.slice(0, 4));
   if (today.slice(5) < birthday.slice(5)) age--;
 
@@ -538,9 +550,52 @@ function LifeCard({
       {view === "journey" ? (
         <JourneyLine start={start} today={today} days={days} habitName={habitName} />
       ) : (
-        <LifeLine pct={pct} journeyDay={journeyDay} bornLabel={formatLong(birthday)} todayLabel={formatLong(today)} endLabel={formatLong(end)} />
+        <LifeLine age={age} journeyDay={journeyDay} bornLabel={formatLong(birthday)} todayLabel={formatLong(today)} />
       )}
     </section>
+  );
+}
+
+function MainGoal({ goal, onRename }: { goal: Goal; onRename: (title: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const Icon = goal.kind ? GOAL_ICON_SET[goal.kind] : Target;
+
+  if (draft !== null)
+    return (
+      <form
+        className="main-goal editing"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (draft.trim().length >= 3) onRename(draft.trim());
+          setDraft(null);
+        }}
+      >
+        <Icon size={16} className="main-goal-icon" aria-hidden="true" />
+        <input
+          aria-label="Your goal"
+          value={draft}
+          maxLength={90}
+          autoFocus
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => e.key === "Escape" && setDraft(null)}
+        />
+        <button type="submit" className="primary-btn small" disabled={draft.trim().length < 3}>
+          Save
+        </button>
+        <button type="button" className="ghost-btn small" onClick={() => setDraft(null)}>
+          Cancel
+        </button>
+      </form>
+    );
+
+  return (
+    <p className="main-goal">
+      <Icon size={16} className="main-goal-icon" aria-hidden="true" />
+      <span className="muted">Your goal:</span> <strong>{goal.title}</strong>
+      <button type="button" className="main-goal-edit" onClick={() => setDraft(goal.title)} aria-label="Edit your goal" title="Edit your goal">
+        <PenLine size={14} aria-hidden="true" />
+      </button>
+    </p>
   );
 }
 
@@ -568,8 +623,8 @@ function BirthdayForm({
           if (value) onSave(value);
         }}
       >
-        <input type="date" value={value} max={today} onChange={(e) => setValue(e.target.value)} required />
-        <button type="submit" className="primary-btn">
+        <DatePicker value={value} max={today} onChange={setValue} label="Your birthday" />
+        <button type="submit" className="primary-btn" disabled={!value}>
           Save
         </button>
         {onCancel && (

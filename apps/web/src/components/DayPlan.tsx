@@ -1,6 +1,7 @@
 import { XP, habitXp, type HabitProgress } from "@ascend/shared";
 import { useState } from "react";
 import type { Goal, Habit, Task } from "../lib/progress";
+import { HabitIcon } from "./Icons";
 
 /* ---------- Habits ---------- */
 
@@ -45,7 +46,7 @@ export function HabitsList(p: HabitsProps) {
                 reason={p.mode === "future" ? "You can’t check off future days" : "Habits can only be checked off on the day. Missed it? Use Second Chance."}
               />
               <button className="habit-icon" onClick={() => p.onCycleIcon(h.id)} title="Change icon">
-                {h.icon}
+                <HabitIcon name={h.icon} />
               </button>
               <div className="item-body">
                 <span className="item-title">

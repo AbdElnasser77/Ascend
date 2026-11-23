@@ -42,12 +42,12 @@ export function StatsChart({ points }: { points: Point[] }) {
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
         <defs>
           <linearGradient id="sc-line" x1="0" x2="1">
-            <stop offset="0" stopColor="#7c3aed" />
-            <stop offset="1" stopColor="#a78bfa" />
+            <stop offset="0" stopColor="#8b3fe0" />
+            <stop offset="1" stopColor="#be96f0" />
           </linearGradient>
           <linearGradient id="sc-fill" x1="0" x2="0" y1="0" y2="1">
-            <stop offset="0" stopColor="#7c3aed" stopOpacity="0.28" />
-            <stop offset="1" stopColor="#7c3aed" stopOpacity="0" />
+            <stop offset="0" stopColor="#8b3fe0" stopOpacity="0.28" />
+            <stop offset="1" stopColor="#8b3fe0" stopOpacity="0" />
           </linearGradient>
         </defs>
         {[0.25, 0.5, 0.75, 1].map((f) => (
