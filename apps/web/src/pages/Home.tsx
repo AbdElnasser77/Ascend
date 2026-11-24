@@ -5,36 +5,23 @@ import { JourneyLine } from "../components/JourneyLine";
 import { EvolutionCard, LevelsModal } from "../components/Levels";
 import { PenLine, Target } from "lucide-react";
 import { DatePicker } from "../components/DatePicker";
+import { FutureChip } from "../components/FutureYou";
 import { GOAL_ICON_SET } from "../components/Icons";
 import { LifeLine } from "../components/LifeLine";
 import { StatsChart } from "../components/StatsChart";
 import { WeekStrip } from "../components/WeekStrip";
-import { daysBetween, formatLong, todayISO } from "../lib/dates";
-import {
-  HABIT_ICONS,
-  activeHabits,
-  dayStats,
-  habitSlotsFor,
-  newId,
-  type Goal,
-  type Habit,
-  type HabitLog,
-  type Redeem,
-  type Task,
-} from "../lib/progress";
-import { useStoredState } from "../lib/useStoredState";
+import { ageOn, daysBetween, formatLong, todayISO } from "../lib/dates";
+import type { Future } from "../lib/journey";
+import { useJourney } from "../lib/journey";
+import { HABIT_ICONS, activeHabits, dayStats, habitSlotsFor, type Goal, type Habit } from "../lib/progress";
 
 const RANGES = [7, 30, 90] as const;
 
 export function Home({ start }: { start: string }) {
   const today = todayISO();
-  const [birthday, setBirthday] = useStoredState<string | null>("ascend.birthday", null);
-  const [habits, setHabits] = useStoredState<Habit[]>("ascend.habits", []);
-  const [startSlots] = useStoredState<number | null>("ascend.startSlots", null);
-  const [tasks, setTasks] = useStoredState<Task[]>("ascend.tasks", []);
-  const [log, setLog] = useStoredState<HabitLog>("ascend.habitLog", {});
-  const [goals, setGoals] = useStoredState<Goal[]>("ascend.goals", []);
-  const [redeems, setRedeems] = useStoredState<Redeem[]>("ascend.redeems", []);
+  const { data, actions } = useJourney();
+  const { habits, tasks, goals, redeems, habitLog: log } = data;
+  const { birthday, startSlots } = data.profile;
   const [editing, setEditing] = useState(false);
   const [selected, setSelected] = useState(today);
   const [showLevels, setShowLevels] = useState(false);
@@ -76,41 +63,29 @@ export function Home({ start }: { start: string }) {
   // ---- mutations: habits are checked on the day; the past is repaired with Second Chance ----
   const mode: "today" | "past" | "future" = selected === today ? "today" : selected < today ? "past" : "future";
 
-  const toggleHabit = (id: string) =>
-    setLog((prev) => {
-      const ids = prev[today] ?? [];
-      return { ...prev, [today]: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id] };
-    });
-
-  const redeem = (habitId: string) => setRedeems((prev) => [...prev, { habitId, day: selected, on: today }]);
+  const toggleHabit = actions.toggleHabit;
+  const redeem = (habitId: string) => actions.redeem(habitId, selected);
 
   const todaysHabits = activeHabits(habits, today);
   const habitSlots = habitSlotsFor(unlocks.habitSlots, habits, start, startSlots);
   const addHabit = (name: string) => {
     if (todaysHabits.length >= habitSlots) return;
-    setHabits((prev) => [...prev, { id: newId(), name, icon: HABIT_ICONS[prev.length % HABIT_ICONS.length], createdAt: today }]);
+    actions.addHabit(name);
   };
 
   // removing keeps history; a habit added and removed on the same day disappears entirely
-  const removeHabit = (id: string) =>
-    setHabits((prev) =>
-      prev.map((h) => (h.id === id ? { ...h, archivedAt: today } : h)).filter((h) => !h.archivedAt || h.archivedAt > h.createdAt),
-    );
+  const removeHabit = actions.removeHabit;
 
-  const cycleIcon = (id: string) =>
-    setHabits((prev) =>
-      prev.map((h) => (h.id === id ? { ...h, icon: HABIT_ICONS[(HABIT_ICONS.indexOf(h.icon) + 1) % HABIT_ICONS.length] } : h)),
-    );
+  const cycleIcon = (id: string) => {
+    const h = habits.find((x) => x.id === id);
+    if (h) actions.updateHabit(id, { icon: HABIT_ICONS[(HABIT_ICONS.indexOf(h.icon) + 1) % HABIT_ICONS.length] });
+  };
 
-  const addTask = (title: string) => setTasks((prev) => [...prev, { id: newId(), title, date: selected, done: false }]);
-  const toggleTask = (id: string) => setTasks((prev) => prev.map((t) => (t.id === id && t.date === today ? { ...t, done: !t.done } : t)));
-  const deleteTask = (id: string) => setTasks((prev) => prev.filter((t) => t.id !== id || t.date < today));
+  const addTask = (title: string) => actions.addTask(title, selected);
+  const { toggleTask, deleteTask } = actions;
 
-  const addGoal = (title: string) => setGoals((prev) => [...prev, { id: newId(), title, createdAt: today }]);
-  const achieveGoal = (id: string) => setGoals((prev) => prev.map((g) => (g.id === id ? { ...g, achievedAt: today } : g)));
-  const undoGoal = (id: string) =>
-    setGoals((prev) => prev.map((g) => (g.id === id && g.achievedAt === today ? { ...g, achievedAt: undefined } : g)));
-  const deleteGoal = (id: string) => setGoals((prev) => prev.filter((g) => g.id !== id));
+  const addGoal = (title: string) => actions.addGoal(title);
+  const { achieveGoal, undoGoal, deleteGoal } = actions;
 
   const selectedLabel =
     selected === today
@@ -132,10 +107,11 @@ export function Home({ start }: { start: string }) {
           <br />
           <span className="gradient-text">Make the days count.</span>
         </h1>
+        <FutureChip future={data.profile.future} age={birthday ? ageOn(birthday, today) : null} />
         {mainGoal && (
           <MainGoal
             goal={mainGoal}
-            onRename={(title) => setGoals((prev) => prev.map((g) => (g.id === mainGoal.id ? { ...g, title } : g)))}
+            onRename={(title) => actions.renameGoal(mainGoal.id, title)}
           />
         )}
       </header>
@@ -152,7 +128,7 @@ export function Home({ start }: { start: string }) {
           today={today}
           onCancel={birthday ? () => setEditing(false) : undefined}
           onSave={(d) => {
-            setBirthday(d);
+            actions.setBirthday(d);
             setEditing(false);
           }}
         />
@@ -164,6 +140,7 @@ export function Home({ start }: { start: string }) {
           days={series}
           journeyDay={journeyDay}
           habitName={(id) => habits.find((h) => h.id === id)?.name ?? "Habit"}
+          future={data.profile.future}
           onEdit={() => setEditing(true)}
         />
       )}
@@ -503,6 +480,7 @@ function LifeCard({
   days,
   journeyDay,
   habitName,
+  future,
   onEdit,
 }: {
   birthday: string;
@@ -511,11 +489,11 @@ function LifeCard({
   days: DayRecord[];
   journeyDay: number;
   habitName: (id: string) => string;
+  future: Future;
   onEdit: () => void;
 }) {
   const [view, setView] = useState<"journey" | "life">("journey");
-  let age = Number(today.slice(0, 4)) - Number(birthday.slice(0, 4));
-  if (today.slice(5) < birthday.slice(5)) age--;
+  const age = ageOn(birthday, today);
 
   return (
     <section className="card">
@@ -550,7 +528,7 @@ function LifeCard({
       {view === "journey" ? (
         <JourneyLine start={start} today={today} days={days} habitName={habitName} />
       ) : (
-        <LifeLine age={age} journeyDay={journeyDay} bornLabel={formatLong(birthday)} todayLabel={formatLong(today)} />
+        <LifeLine age={age} journeyDay={journeyDay} bornLabel={formatLong(birthday)} todayLabel={formatLong(today)} future={future} />
       )}
     </section>
   );

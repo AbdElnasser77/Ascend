@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { startTransition, useEffect, useState } from "react";
 
 export type Route = "home" | "plan";
 
@@ -9,7 +9,8 @@ export function useRoute(): Route {
   const [route, setRoute] = useState<Route>(read);
   useEffect(() => {
     const on = () => {
-      setRoute(read());
+      // a transition keeps the current page on screen until the next one is ready, so no loader flashes in between
+      startTransition(() => setRoute(read()));
       window.scrollTo({ top: 0 });
     };
     window.addEventListener("hashchange", on);

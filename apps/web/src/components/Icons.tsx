@@ -5,6 +5,11 @@ import {
   Dumbbell,
   Flame,
   Footprints,
+  Gem,
+  HeartPulse,
+  Leaf,
+  Shield,
+  Wrench,
   GraduationCap,
   Laptop,
   Mountain,
@@ -17,6 +22,7 @@ import {
   Wind,
   type LucideIcon,
 } from "lucide-react";
+import type { FutureTrait } from "@ascend/shared";
 import type { GoalKind } from "../lib/progress";
 
 /** habit icons are stored by name so they survive a change of icon set */
@@ -48,4 +54,16 @@ export const GOAL_ICON_SET: Record<GoalKind, LucideIcon> = {
   streak: Flame,
   position: Briefcase,
   milestone: Mountain,
+};
+
+/** "Future you" traits: who you want to become, in a word */
+export const FUTURE_TRAIT_META: Record<FutureTrait, { label: string; icon: LucideIcon }> = {
+  healthy: { label: "Healthy", icon: HeartPulse },
+  skilled: { label: "Skilled", icon: Wrench },
+  calm: { label: "Calm", icon: Leaf },
+  wealthy: { label: "Wealthy", icon: Gem },
+  creative: { label: "Creative", icon: Palette },
+  connected: { label: "Connected", icon: Users },
+  confident: { label: "Confident", icon: Shield },
+  disciplined: { label: "Disciplined", icon: Flame },
 };

@@ -38,3 +38,10 @@ export function formatLong(iso: string): string {
     day: "numeric",
   });
 }
+
+/** Whole years between a birthday and a day. */
+export function ageOn(birthday: string, day: string): number {
+  let age = Number(day.slice(0, 4)) - Number(birthday.slice(0, 4));
+  if (day.slice(5) < birthday.slice(5)) age--;
+  return age;
+}

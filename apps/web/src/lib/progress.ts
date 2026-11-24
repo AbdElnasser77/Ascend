@@ -66,12 +66,4 @@ export function dayStats(date: string, habits: Habit[], tasks: Task[], log: Habi
   return { habitsDone, tasksDone, done, total, score: total ? done / total : 0 };
 }
 
-/**
- * Habit slots available: the level's slots, or the one or two habits chosen during onboarding
- * (saved as `startSlots`, so removing a starting habit doesn't take its slot away).
- * Journeys from before `startSlots` existed fall back to counting Day 1 habits.
- */
-export function habitSlotsFor(levelSlots: number, habits: Habit[], start: string, startSlots: number | null): number {
-  const fromStart = startSlots ?? habits.filter((h) => h.createdAt === start).length;
-  return Math.max(levelSlots, Math.min(2, fromStart));
-}
+export { habitSlotsFor } from "@ascend/shared";

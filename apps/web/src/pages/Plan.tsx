@@ -1,20 +1,11 @@
 import { TIERS, evaluateJourney, levelFor } from "@ascend/shared";
 import { Check, Lock, PenLine, Plus, Target, Trash2, X } from "lucide-react";
 import { useMemo, useState } from "react";
+import { FutureSection } from "../components/FutureYou";
 import { GOAL_ICON_SET, HABIT_ICON_SET, HabitIcon } from "../components/Icons";
-import { addDays, formatLong, todayISO } from "../lib/dates";
-import {
-  HABIT_ICONS,
-  activeHabits,
-  habitSlotsFor,
-  newId,
-  type Goal,
-  type Habit,
-  type HabitLog,
-  type Redeem,
-  type Task,
-} from "../lib/progress";
-import { useStoredState } from "../lib/useStoredState";
+import { addDays, ageOn, formatLong, todayISO } from "../lib/dates";
+import { useJourney } from "../lib/journey";
+import { activeHabits, habitSlotsFor, type Habit } from "../lib/progress";
 
 const stageAt = (lvl: number) => [...TIERS].reverse().find((t) => t.level <= lvl)!.name;
 
@@ -24,26 +15,19 @@ const stageAt = (lvl: number) => [...TIERS].reverse().find((t) => t.level <= lvl
  */
 export function Plan({ start }: { start: string }) {
   const today = todayISO();
-  const [habits, setHabits] = useStoredState<Habit[]>("ascend.habits", []);
-  const [startSlots] = useStoredState<number | null>("ascend.startSlots", null);
-  const [tasks, setTasks] = useStoredState<Task[]>("ascend.tasks", []);
-  const [goals, setGoals] = useStoredState<Goal[]>("ascend.goals", []);
-  const [log] = useStoredState<HabitLog>("ascend.habitLog", {});
-  const [redeems] = useStoredState<Redeem[]>("ascend.redeems", []);
+  const { data, actions } = useJourney();
+  const { habits, tasks, goals, redeems, habitLog: log } = data;
+  const { startSlots } = data.profile;
 
   const { unlocks } = useMemo(
-    () => evaluateJourney({ start, today, habits, habitLog: log, tasks, goals, redeems }),
+    // before Day 1 (a journey that starts tomorrow), the rules apply as of Day 1
+    () => evaluateJourney({ start, today: today < start ? start : today, habits, habitLog: log, tasks, goals, redeems }),
     [start, today, habits, log, tasks, goals, redeems],
   );
 
   // ---- goal ----
   const mainGoal = goals.find((g) => g.main && !g.achievedAt);
-  const saveGoal = (title: string) =>
-    setGoals((prev) =>
-      mainGoal
-        ? prev.map((g) => (g.id === mainGoal.id ? { ...g, title } : g))
-        : [...prev, { id: newId(), title, main: true, createdAt: today }],
-    );
+  const saveGoal = (title: string) => (mainGoal ? actions.renameGoal(mainGoal.id, title) : actions.addGoal(title, { main: true }));
 
   // ---- habits (same rules as the dashboard) ----
   const current = activeHabits(habits, today);
@@ -51,23 +35,19 @@ export function Plan({ start }: { start: string }) {
   const nextSlotAt = levelFor((u) => u.habitSlots > slots);
   const addHabit = (name: string) => {
     if (current.length >= slots) return;
-    setHabits((prev) => [...prev, { id: newId(), name, icon: HABIT_ICONS[prev.length % HABIT_ICONS.length], createdAt: today }]);
+    actions.addHabit(name);
   };
-  const updateHabit = (id: string, patch: Partial<Habit>) => setHabits((prev) => prev.map((h) => (h.id === id ? { ...h, ...patch } : h)));
+  const updateHabit = (id: string, patch: Pick<Partial<Habit>, "name" | "icon">) => actions.updateHabit(id, patch);
   // removing keeps history; a habit added and removed on the same day disappears entirely
-  const removeHabit = (id: string) =>
-    setHabits((prev) =>
-      prev.map((h) => (h.id === id ? { ...h, archivedAt: today } : h)).filter((h) => !h.archivedAt || h.archivedAt > h.createdAt),
-    );
+  const removeHabit = actions.removeHabit;
 
   // ---- tasks: today and upcoming days; past days stay as they were ----
   const [taskDay, setTaskDay] = useState(today);
   const tasksAt = levelFor((u) => u.tasks) ?? 10;
   const days = Array.from({ length: 7 }, (_, i) => addDays(today, i));
   const dayTasks = tasks.filter((t) => t.date === taskDay);
-  const addTask = (title: string) => setTasks((prev) => [...prev, { id: newId(), title, date: taskDay, done: false }]);
-  const renameTask = (id: string, title: string) => setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
-  const deleteTask = (id: string) => setTasks((prev) => prev.filter((t) => t.id !== id || t.date < today));
+  const addTask = (title: string) => actions.addTask(title, taskDay);
+  const { renameTask, deleteTask } = actions;
 
   const GoalIcon = mainGoal?.kind ? GOAL_ICON_SET[mainGoal.kind] : Target;
 
@@ -83,6 +63,19 @@ export function Plan({ start }: { start: string }) {
         <p className="muted">Changes apply from today. Your past days and streak history stay as they were.</p>
       </header>
 
+      {/* ---- future you ---- */}
+      <section className="card plan-section">
+        <div className="plan-head">
+          <h2>Future you</h2>
+          <span className="muted small">Who your goals and habits are turning you into</span>
+        </div>
+        <FutureSection
+          future={data.profile.future}
+          age={data.profile.birthday ? ageOn(data.profile.birthday, today) : null}
+          onSave={actions.setFuture}
+        />
+      </section>
+
       {/* ---- goal ---- */}
       <section className="card plan-section">
         <div className="plan-head">
@@ -96,7 +89,7 @@ export function Plan({ start }: { start: string }) {
               title={mainGoal.title}
               onRename={saveGoal}
               removeLabel="Clear goal"
-              onRemove={() => setGoals((prev) => prev.filter((g) => g.id !== mainGoal.id))}
+              onRemove={() => actions.deleteGoal(mainGoal.id)}
             />
           ) : (
             <AddField placeholder="Write your goal in one sentence…" onAdd={saveGoal} />
@@ -140,7 +133,7 @@ export function Plan({ start }: { start: string }) {
           <AddField placeholder={`Add a habit… (${current.length}/${slots} slots)`} onAdd={addHabit} />
         ) : (
           <p className="plan-note">
-            <Lock size={14} aria-hidden="true" /> All {slots} habit slots are in use.
+            <Lock size={14} aria-hidden="true" /> {slots === 1 ? "Your habit slot is in use." : `All ${slots} habit slots are in use.`}
             {nextSlotAt ? ` Your next slot unlocks at Level ${nextSlotAt}.` : ""} Remove one to swap it for another.
           </p>
         )}

@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   Cake,
+  CalendarDays,
   Check,
   ChevronLeft,
   Clock,
@@ -13,18 +14,21 @@ import {
   Sparkles,
   Sprout,
   Target,
+  Telescope,
   type LucideIcon,
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { DatePicker } from "../components/DatePicker";
-import { GOAL_ICON_SET, HabitIcon } from "../components/Icons";
+import { FUTURE_TRAIT_META, GOAL_ICON_SET, HabitIcon } from "../components/Icons";
 import { LifeLine } from "../components/LifeLine";
-import { formatLong } from "../lib/dates";
-import { newId, type Goal, type GoalKind, type Habit } from "../lib/progress";
-import { readStored, writeStored } from "../lib/useStoredState";
+import { addDays, ageOn, formatLong } from "../lib/dates";
+import { ApiError } from "../lib/api";
+import { useJourney } from "../lib/journey";
+import { type GoalKind } from "../lib/progress";
+import { FUTURE_TRAITS, FUTURE_YEARS, MAX_FUTURE_STATEMENT, MAX_FUTURE_TRAITS, type FutureTrait } from "@ascend/shared";
 
-/** one habit is ideal; two is the most a new journey starts with */
-const MAX_START_HABITS = 2;
+/** a journey starts with exactly one habit; the second slot opens at Level 3 */
+const MAX_START_HABITS = 1;
 
 type GoalType = { id: GoalKind; label: string; hint: string; examples: string[] };
 
@@ -130,6 +134,13 @@ const PRESETS: Preset[] = [
 
 const GENERAL_HABITS = ["Deep work: 2 hours", "Read 20 pages", "Workout", "Plan tomorrow"];
 
+/** the three steps that make any habit stick, in order */
+const GUIDE = [
+  { key: "when", label: "When", icon: Clock },
+  { key: "tiny", label: "Start tiny", icon: Sprout },
+  { key: "next", label: "Next time", icon: ArrowRight },
+] as const;
+
 const CUSTOM_TIPS = {
   when: "Pick a fixed time and attach it to something you already do: after coffee, after lunch, before bed.",
   tiny: "Make the first version so small you can’t say no. You can grow it later.",
@@ -138,12 +149,16 @@ const CUSTOM_TIPS = {
 
 type Draft = { name: string; icon: string };
 
-const STEPS = ["Welcome", "Your life", "Your goal", "Habits", "Your plan", "Begin"] as const;
+const STEPS = ["Welcome", "Your life", "Future you", "Your goal", "Habits", "Your plan", "Begin"] as const;
+/** step indexes by name */
+const S = { welcome: 0, life: 1, future: 2, goal: 3, habits: 4, plan: 5, begin: 6 } as const;
+const stepLabel = (i: number) => `Step ${i + 1} of ${STEPS.length}`;
 
 /** icon shown on each step's header and collapsed pill */
 const STEP_META: { icon: LucideIcon }[] = [
   { icon: Sparkles },
   { icon: Cake },
+  { icon: Telescope },
   { icon: Target },
   { icon: Repeat },
   { icon: MapIcon },
@@ -154,20 +169,34 @@ const STEP_META: { icon: LucideIcon }[] = [
  * First sign-in: configure your journey before it starts.
  * Day 1 is the moment you press "Begin", never earlier.
  */
-export function Onboarding({ today, onBegin }: { today: string; onBegin: () => void }) {
+export function Onboarding({ today, name, onBegin }: { today: string; name?: string | null; onBegin: () => void }) {
+  const firstName = name?.trim().split(/\s+/)[0] ?? "";
+  const { data, actions } = useJourney();
+  const openGoal = data.goals.find((g) => g.main && !g.achievedAt);
   const [step, setStep] = useState(0);
   const [dir, setDir] = useState<"fwd" | "back">("fwd");
-  const [birthday, setBirthday] = useState(() => readStored<string | null>("ascend.birthday", null) ?? "");
-  const [goalKind, setGoalKind] = useState<GoalKind | null>(
-    () => readStored<Goal[]>("ascend.goals", []).find((g) => g.main && !g.achievedAt)?.kind ?? null,
-  );
-  const [goalTitle, setGoalTitle] = useState(() => readStored<Goal[]>("ascend.goals", []).find((g) => g.main && !g.achievedAt)?.title ?? "");
+  const [birthday, setBirthday] = useState(() => data.profile.birthday ?? "");
+  const [goalKind, setGoalKind] = useState<GoalKind | null>(() => openGoal?.kind ?? null);
+  const [goalTitle, setGoalTitle] = useState(() => openGoal?.title ?? "");
   const [picked, setPicked] = useState<Draft[]>(() =>
-    readStored<Habit[]>("ascend.habits", [])
+    data.habits
       .filter((h) => !h.archivedAt)
       .map(({ name, icon }) => ({ name, icon }))
       .slice(0, MAX_START_HABITS),
   );
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Day 1 can be today, or tomorrow for a clean start
+  const [startsTomorrow, setStartsTomorrow] = useState(false);
+  const dayOne = startsTomorrow ? addDays(today, 1) : today;
+  // "Future you" is optional: the step can be skipped
+  const [futureStatement, setFutureStatement] = useState(() => data.profile.future.statement ?? "");
+  const [futureYears, setFutureYears] = useState<number>(() => data.profile.future.years ?? 5);
+  const [futureTraits, setFutureTraits] = useState<FutureTrait[]>(() => data.profile.future.traits);
+  const futureText = futureStatement.trim();
+  const hasFuture = futureText.length > 0;
+  const toggleTrait = (t: FutureTrait) =>
+    setFutureTraits((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t].slice(-MAX_FUTURE_TRAITS)));
+  const futureInput = { statement: futureText || null, years: hasFuture || futureTraits.length ? futureYears : null, traits: futureTraits };
   const [custom, setCustom] = useState("");
   const [launching, setLaunching] = useState(false);
 
@@ -177,10 +206,10 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
   const isPicked = (name: string) => picked.some((p) => p.name === name);
   // picking beyond the limit replaces the oldest pick
   const toggle = (d: Draft) =>
-    setPicked((prev) => (isPicked(d.name) ? prev.filter((p) => p.name !== d.name) : [...prev, d].slice(-MAX_START_HABITS)));
+    setPicked((prev) => (isPicked(d.name) ? prev.filter((p) => p.name !== d.name) : [d]));
   const addCustom = () => {
     const name = custom.trim();
-    if (name && !isPicked(name)) setPicked((prev) => [...prev, { name, icon: "star" }].slice(-MAX_START_HABITS));
+    if (name && !isPicked(name)) setPicked([{ name, icon: "star" }]);
     setCustom("");
   };
 
@@ -188,10 +217,9 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
   // an idea narrows the habit suggestions; without one, a general starter set
   const recommended = kind ? PRESETS.filter((p) => p.fits.includes(kind.id)) : PRESETS.filter((p) => GENERAL_HABITS.includes(p.name));
   const extraPicks = picked.filter((p) => !recommended.some((x) => x.name === p.name));
-  const tipsFor = (name: string) => PRESETS.find((p) => p.name === name) ?? CUSTOM_TIPS;
 
   const canNext =
-    step === 1 ? Boolean(birthday) && birthday <= today : step === 2 ? goal.length >= 3 : step === 3 ? picked.length > 0 : true;
+    step === S.life ? Boolean(birthday) && birthday <= today : step === S.goal ? goal.length >= 3 : step === S.habits ? picked.length > 0 : true;
 
   const go = (to: number) => {
     setDir(to > step ? "fwd" : "back");
@@ -199,26 +227,30 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const begin = () => {
-    // reuse existing habit ids when names match; everything starts on Day 1 (today)
-    const existing = readStored<Habit[]>("ascend.habits", []);
-    const habits: Habit[] = picked.map(
-      (p) => existing.find((h) => h.name === p.name && !h.archivedAt) ?? { id: newId(), name: p.name, icon: p.icon, createdAt: today },
-    );
-    // the first goal replaces any earlier (unfinished) first goal
-    const goals = readStored<Goal[]>("ascend.goals", []).filter((g) => !(g.main && !g.achievedAt));
-    writeStored("ascend.birthday", birthday);
-    writeStored("ascend.startSlots", picked.length);
-    writeStored("ascend.habits", habits.map((h) => ({ ...h, createdAt: today })));
-    writeStored("ascend.goals", [...goals, { id: newId(), title: goal, kind: goalKind ?? undefined, main: true, createdAt: today }]);
-    onBegin();
-  };
-
-  const launch = () => {
+  // saving runs during the finale animation; the dashboard opens once both are done
+  const launch = async () => {
     if (launching) return;
     setLaunching(true);
+    setSaveError(null);
     const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    window.setTimeout(begin, calm ? 0 : 2000);
+    const finale = new Promise((r) => window.setTimeout(r, calm ? 0 : 2000));
+    const save = actions.start({
+      birthday,
+      future: futureInput,
+      startsOn: dayOne,
+      goal: { title: goal, kind: goalKind },
+      habits: picked.map(({ name, icon }) => ({ name, icon })),
+    });
+    try {
+      const [saved] = await Promise.all([save, finale]);
+      // both in one batch: the loader takes over as the saved journey arrives
+      onBegin();
+      actions.replace(saved);
+    } catch (err) {
+      await finale;
+      setLaunching(false);
+      setSaveError(err instanceof ApiError ? err.message : "Couldn't save your journey. Check your connection and try again.");
+    }
   };
 
   const chip = (h: Draft, rec = false) => (
@@ -243,8 +275,9 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
     [
       "Done",
       age !== null ? `Age ${age}` : "Done",
+      hasFuture ? `In ${futureYears} yrs` : futureTraits.length ? futureTraits.map((t) => FUTURE_TRAIT_META[t].label).join(", ") : "Skipped",
       goal || "Done",
-      `${picked.length} ${picked.length === 1 ? "habit" : "habits"}`,
+      picked[0]?.name ?? "Done",
       "Ready",
       "",
     ][i];
@@ -255,7 +288,7 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
   const ahead = [step + 2, step + 1].filter((i) => i <= last);
   const behind = [step - 1, step - 2].filter((i) => i >= 0);
 
-  const nextButton = (extra = "", label = step === 0 ? "Let’s start" : "Next Step") => (
+  const nextButton = (extra = "", label = step === S.welcome ? "Let’s start" : "Next Step") => (
     <button type="button" className={`ob-pill-btn next ${extra}`} disabled={!canNext} onClick={next}>
       {label}
       <Play size={9} fill="currentColor" aria-hidden="true" />
@@ -269,7 +302,7 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
         <div className="ob-finale" role="status">
           <div className="ob-fin from">
             <small>From</small>
-            <span>Day 1 · {formatLong(today)}</span>
+            <span>Day 1 · {formatLong(dayOne)}</span>
           </div>
           <div className="ob-fin done">Done!</div>
           <div className="ob-fin to">
@@ -305,7 +338,7 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
                 <ChevronLeft size={16} aria-hidden="true" />
               </button>
             )}
-            {step === 0 ? null : step < last ? (
+            {step === S.welcome ? null : step < last ? (
               nextButton()
             ) : (
               <button type="button" className="ob-pill-btn" onClick={() => go(step - 1)} disabled={launching}>
@@ -317,17 +350,23 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
         </header>
 
         <AutoHeight>
-        {step === 0 && (
+        {step === S.welcome && (
           <div key="s0" className={`ob-body center ${dir}`}>
             <img src="/brand/ascend-icon.png" alt="Ascend" className="ob-logo" />
             <h1 className="ob-title">
-              Don’t count the days.
-              <br />
-              <span className="gradient-text shimmer">Make the days count.</span>
+              Welcome{firstName ? (
+                <>
+                  , <span className="gradient-text shimmer">{firstName}</span>
+                </>
+              ) : null}
+              .
             </h1>
+            <p className="ob-slogan">
+              From today, you don’t count the days, you <span className="gradient-text shimmer">make the days count</span>.
+            </p>
             <p className="muted ob-lead">
-              Take a minute to set up your journey. You’ll map your life, choose your first goal, pick the habits that get you
-              there, and then Day 1 begins.
+              Take a minute to set up your journey. You’ll map your life, picture who you want to become, choose your first goal
+              and the habits that get you there. Then Day 1 begins.
             </p>
             <ol className="ob-stages" aria-label="Your journey">
               {[
@@ -348,18 +387,95 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
           </div>
         )}
 
-        {step === 1 && (
+        {step === S.life && (
           <div key="s1" className={`ob-body ${dir}`}>
-            <Stat label="Step 2 of 6" title="When were you born?" side={{ label: "Age", value: age !== null ? String(age) : "–" }} />
-            <p className="muted">We use it to map your life. It stays on this device.</p>
+            <Stat label={stepLabel(S.life)} title="When were you born?" side={{ label: "Age", value: age !== null ? String(age) : "–" }} />
+            <p className="muted">We use it to map your life. It’s saved to your account and never shared.</p>
             <DatePicker value={birthday} max={today} onChange={setBirthday} label="Your birthday" />
-            {birthday && birthday <= today && <LifePreview birthday={birthday} today={today} />}
           </div>
         )}
 
-        {step === 2 && (
+        {step === S.future && (
+          <div key="sf" className={`ob-body ${dir}`}>
+            <Stat
+              label={stepLabel(S.future)}
+              title="Who do you want to become?"
+              side={{ label: "By age", value: age !== null ? String(age + futureYears) : "–" }}
+            />
+            <p className="muted">
+              Picture yourself a few years from now: not a task, a person. Every goal and habit you add will move you toward
+              them. <strong className="age">Optional</strong>, skip it if nothing comes to mind yet.
+            </p>
+
+            <p className="ob-section">
+              <Clock size={13} aria-hidden="true" /> How far ahead?
+            </p>
+            <div className="ob-try ob-years" role="radiogroup" aria-label="Years ahead">
+              {FUTURE_YEARS.map((y) => (
+                <button
+                  key={y}
+                  type="button"
+                  role="radio"
+                  aria-checked={futureYears === y}
+                  className={`ob-try-chip ${futureYears === y ? "on" : ""}`}
+                  onClick={() => setFutureYears(y)}
+                >
+                  {y} {y === 1 ? "year" : "years"}
+                </button>
+              ))}
+            </div>
+
+            <label className="ob-label" htmlFor="ob-future">
+              In {futureYears} {futureYears === 1 ? "year" : "years"}, I am someone who…
+            </label>
+            <input
+              id="ob-future"
+              className="ob-input wide"
+              maxLength={MAX_FUTURE_STATEMENT}
+              placeholder="e.g. trains 4 times a week and works as a data analyst"
+              value={futureStatement}
+              onChange={(e) => setFutureStatement(e.target.value)}
+            />
+
+            <p className="ob-section">
+              <Sparkles size={13} aria-hidden="true" /> In a word or three <span className="muted">(up to {MAX_FUTURE_TRAITS})</span>
+            </p>
+            <div className="ob-chips" aria-label="Traits">
+              {FUTURE_TRAITS.map((t) => {
+                const { label, icon: Icon } = FUTURE_TRAIT_META[t];
+                const on = futureTraits.includes(t);
+                return (
+                  <button key={t} type="button" className={`ob-chip ${on ? "on" : ""}`} aria-pressed={on} onClick={() => toggleTrait(t)}>
+                    <Icon size={16} aria-hidden="true" />
+                    {label}
+                    {on && <Check className="ob-chip-check" size={14} aria-hidden="true" />}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="ob-tip">
+              <Lightbulb className="ob-tip-icon" size={18} aria-hidden="true" />
+              <p>
+                Describe who you are, not what you own. <span className="good">“Someone who runs every morning”</span> pulls harder
+                than <span className="bad">“Thin”</span>.
+              </p>
+            </div>
+            <EditLater>Don’t worry, you can change it later.</EditLater>
+          </div>
+        )}
+
+        {step === S.goal && (
           <div key="s2" className={`ob-body ${dir}`}>
-            <Stat label="Step 3 of 6" title="Pick your first goal." />
+            <Stat label={stepLabel(S.goal)} title="Pick your first goal." />
+            {hasFuture && (
+              <p className="ob-toward">
+                <Telescope size={15} aria-hidden="true" />
+                <span>
+                  First step toward someone who <strong>{futureText}</strong>
+                </span>
+              </p>
+            )}
             <p className="muted">
               It can be simple or hard, but we recommend <strong className="age">simple yet effective</strong>: one clear thing
               you’ll know you’ve finished.
@@ -424,16 +540,36 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
           </div>
         )}
 
-        {step === 3 && (
+        {step === S.habits && (
           <div key="s3" className={`ob-body ${dir}`}>
-            <Stat label="Step 4 of 6" title="Add a habit or two to support it." side={{ label: "Chosen", value: `${picked.length}/${MAX_START_HABITS}` }} />
+            <Stat label={stepLabel(S.habits)} title="Choose one habit that supports your goal." />
             <p className="muted">
-              Goal: <strong className="age">{goal}</strong>. Habits are the small daily steps that get you there. One is perfect;
-              two is the most to start with.
+              Goal: <strong className="age">{goal}</strong>.
             </p>
 
+            <ul className="ob-rules" aria-label="The rules">
+              <li>
+                <span className="ob-rules-num">1</span>
+                <span>
+                  <strong>Choose only one.</strong> One habit you actually do beats three you skip.
+                </span>
+              </li>
+              <li>
+                <span className="ob-rules-num">2</span>
+                <span>
+                  <strong>Make it small.</strong> Small enough that a bad day can’t stop you.
+                </span>
+              </li>
+              <li>
+                <span className="ob-rules-num">3</span>
+                <span>
+                  <strong>Do it every single day.</strong> That’s what matters most.
+                </span>
+              </li>
+            </ul>
+
             <p className="ob-section">
-              <Sparkles size={13} aria-hidden="true" /> Recommended for your goal
+              <Sparkles size={13} aria-hidden="true" /> Recommended for your goal <span className="muted">(pick one)</span>
             </p>
             <div className="ob-chips">
               {recommended.map((h) => chip(h, true))}
@@ -447,7 +583,7 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
                 addCustom();
               }}
             >
-              <input className="ob-input" placeholder="Or write your own…" maxLength={60} value={custom} onChange={(e) => setCustom(e.target.value)} />
+              <input className="ob-input" placeholder="Or write your own, keep it small…" maxLength={60} value={custom} onChange={(e) => setCustom(e.target.value)} />
               <button type="submit" className="ghost-btn" disabled={!custom.trim()}>
                 Add
               </button>
@@ -458,64 +594,61 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
                   <i key={i} className={i < picked.length ? "on" : ""} />
                 ))}
               </span>
-              {picked.length === 0
-                ? "Pick one to continue"
-                : picked.length === 1
-                  ? "1 habit. A great start."
-                  : "2 habits. That’s the max for now."}
+              {picked.length === 0 ? (
+                "Pick one to continue"
+              ) : (
+                <span>
+                  Your habit: <strong>{picked[0].name}</strong>. Every day, starting Day 1.
+                </span>
+              )}
             </p>
-            <EditLater>Don’t worry, you can change your habits later.</EditLater>
+            <EditLater>You can change it later. Your second habit slot opens at Level 3.</EditLater>
           </div>
         )}
 
-        {step === 4 && (
+        {step === S.plan && (
           <div key="s4" className={`ob-body ${dir}`}>
-            <Stat label="Step 5 of 6" title="Here’s how you’ll make it happen." side={{ label: "Habits", value: String(picked.length) }} />
+            <Stat label={stepLabel(S.plan)} title="Here’s how you’ll make it happen." side={{ label: "Every day", value: "1" }} />
             <p className="muted">
-              Each habit is a small daily step toward <strong className="age">{goal}</strong>.
+              <strong className="age">{picked[0]?.name}</strong> is your small daily step toward <strong className="age">{goal}</strong>.
             </p>
 
-            <div className="ob-plans">
-              {picked.map((p) => {
-                const t = tipsFor(p.name);
+            {/* the same three steps for every habit: shown once, with a habit's own tip only when it has one */}
+            <ol className="ob-guide">
+              {GUIDE.map(({ key, label, icon: Icon }, i) => {
+                const specific = picked.flatMap((h) => {
+                  const preset = PRESETS.find((x) => x.name === h.name);
+                  return preset ? [{ habit: h, tip: preset[key] }] : [];
+                });
                 return (
-                  <article key={p.name} className="ob-plan">
-                    <header>
-                      <span className="ob-plan-icon" aria-hidden="true">
-                        <HabitIcon name={p.icon} size={20} />
-                      </span>
-                      <h3>{p.name}</h3>
-                    </header>
-                    <dl>
-                      <div>
-                        <dt>
-                          <Clock size={13} aria-hidden="true" /> When
-                        </dt>
-                        <dd>{t.when}</dd>
-                      </div>
-                      <div>
-                        <dt>
-                          <Sprout size={13} aria-hidden="true" /> Start tiny
-                        </dt>
-                        <dd>{t.tiny}</dd>
-                      </div>
-                      <div>
-                        <dt>
-                          <ArrowRight size={13} aria-hidden="true" /> Next time
-                        </dt>
-                        <dd>{t.next}</dd>
-                      </div>
-                    </dl>
-                  </article>
+                  <li key={key} style={{ "--i": i } as CSSProperties}>
+                    <span className="ob-guide-num" aria-hidden="true">
+                      {i + 1}
+                    </span>
+                    <div>
+                      <h3>
+                        <Icon size={15} aria-hidden="true" /> {label}
+                      </h3>
+                      <p>{CUSTOM_TIPS[key]}</p>
+                      {specific.map(({ habit, tip }) => (
+                        <p key={habit.name} className="ob-guide-for">
+                          <HabitIcon name={habit.icon} size={14} />
+                          <span>
+                            <b>{habit.name}:</b> {tip}
+                          </span>
+                        </p>
+                      ))}
+                    </div>
+                  </li>
                 );
               })}
-            </div>
+            </ol>
 
             <h3 className="ob-sub">What happens next</h3>
             <ol className="ob-timeline">
               <li>
-                <b>Today · Day 1</b>
-                <span>Do {picked.length > 1 ? "each habit" : "your habit"} once, then check it off on your dashboard.</span>
+                <b>{startsTomorrow ? "Tomorrow" : "Today"} · Day 1</b>
+                <span>Do your habit once, then check it off on your dashboard.</span>
               </li>
               <li>
                 <b>Days 2 to 7</b>
@@ -533,14 +666,52 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
           </div>
         )}
 
-        {step === 5 && (
+        {step === S.begin && (
           <div key="s5" className={`ob-body ${dir}`}>
-            <Stat label="Step 6 of 6" title="Are you ready to begin?" side={{ label: "Day 1", value: "Today" }} />
+            <Stat label={stepLabel(S.begin)} title="Are you ready to begin?" side={{ label: "Day 1", value: startsTomorrow ? "Tomorrow" : "Today" }} />
+
+            <p className="ob-section">
+              <CalendarDays size={13} aria-hidden="true" /> When is your Day 1?
+            </p>
+            <div className="ob-dayone" role="radiogroup" aria-label="When is your Day 1?">
+              {[false, true].map((tomorrow) => (
+                <button
+                  key={String(tomorrow)}
+                  type="button"
+                  role="radio"
+                  aria-checked={startsTomorrow === tomorrow}
+                  className={`ob-dayone-opt ${startsTomorrow === tomorrow ? "on" : ""}`}
+                  onClick={() => setStartsTomorrow(tomorrow)}
+                >
+                  <strong>{tomorrow ? "Tomorrow" : "Today"}</strong>
+                  <small>{formatLong(tomorrow ? addDays(today, 1) : today)}</small>
+                  <span>{tomorrow ? "A clean start in the morning" : "Start right now, check off today"}</span>
+                </button>
+              ))}
+            </div>
             <p className="muted">
-              Day 1 starts the moment you press begin: <strong className="age">{formatLong(today)}</strong>.
+              {startsTomorrow ? (
+                <>
+                  Your journey starts tomorrow, <strong className="age">{formatLong(dayOne)}</strong>. Tonight, decide when you’ll do{" "}
+                  your habit.
+                </>
+              ) : (
+                <>
+                  Day 1 starts the moment you press begin: <strong className="age">{formatLong(today)}</strong>.
+                </>
+              )}
             </p>
 
             <dl className="ob-stops">
+              {hasFuture && (
+                <div>
+                  <dt>Future you</dt>
+                  <dd>
+                    <Telescope size={16} aria-hidden="true" />
+                    Someone who {futureText}
+                  </dd>
+                </div>
+              )}
               <div>
                 <dt>Goal</dt>
                 <dd>
@@ -549,7 +720,7 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
                 </dd>
               </div>
               <div>
-                <dt>{picked.length > 1 ? "Habits" : "Habit"}</dt>
+                <dt>Habit</dt>
                 <dd className="ob-stops-habits">
                   {picked.map((p) => (
                     <span key={p.name}>
@@ -560,10 +731,15 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
               </div>
             </dl>
 
-            <LifePreview birthday={birthday} today={today} />
+            <LifePreview birthday={birthday} today={today} dayOne={dayOne} future={hasFuture ? futureInput : null} />
 
+            {saveError && (
+              <p className="auth-error ob-save-error" role="alert">
+                {saveError}
+              </p>
+            )}
             <button type="button" className="ob-go" onClick={launch} disabled={launching}>
-              Yes, begin Day 1
+              {startsTomorrow ? "Yes, start tomorrow" : "Yes, begin Day 1"}
             </button>
           </div>
         )}
@@ -571,7 +747,7 @@ export function Onboarding({ today, onBegin }: { today: string; onBegin: () => v
         </AutoHeight>
 
         {/* a Continue at the end of every step; on phones it stays pinned to the bottom of the screen */}
-        {step > 0 && step < last && <div className="ob-foot">{nextButton("wide", "Continue")}</div>}
+        {step > 0 && step < last && <div className="ob-foot">{nextButton("wide", step === S.future && !hasFuture && !futureTraits.length ? "Skip for now" : "Continue")}</div>}
       </section>
 
         <ol className="ob-stack behind" aria-label="Finished steps">
@@ -631,11 +807,6 @@ function AutoHeight({ children }: { children: ReactNode }) {
   );
 }
 
-function ageOn(birthday: string, today: string) {
-  let age = Number(today.slice(0, 4)) - Number(birthday.slice(0, 4));
-  if (today.slice(5) < birthday.slice(5)) age--;
-  return age;
-}
 
 /** the video's stat row: small label over a big light value, with a second one on the right */
 function Stat({ label, title, side }: { label: string; title: string; side?: { label: string; value: string } }) {
@@ -670,15 +841,26 @@ function Ring({ pct }: { pct: number }) {
   );
 }
 
-function LifePreview({ birthday, today }: { birthday: string; today: string }) {
-  const age = ageOn(birthday, today);
+function LifePreview({
+  birthday,
+  today,
+  dayOne = today,
+  future,
+}: {
+  birthday: string;
+  today: string;
+  /** when Day 1 is (today or tomorrow) */
+  dayOne?: string;
+  future?: { statement: string | null; years: number | null } | null;
+}) {
+  const age = ageOn(birthday, dayOne);
 
   return (
     <div className="ob-life">
       <p className="ob-life-title">
-        This is your life. <span className="muted">You are {age}. Today becomes Day 1.</span>
+        This is your life. <span className="muted">You are {age}. {dayOne === today ? "Today" : "Tomorrow"} becomes Day 1.</span>
       </p>
-      <LifeLine age={age} journeyDay={1} bornLabel={formatLong(birthday)} todayLabel={formatLong(today)} />
+      <LifeLine age={age} journeyDay={1} bornLabel={formatLong(birthday)} todayLabel={formatLong(dayOne)} future={future} />
     </div>
   );
 }
