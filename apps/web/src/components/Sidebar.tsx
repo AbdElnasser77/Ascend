@@ -35,11 +35,6 @@ export function Sidebar({ route, user, onSignOut }: { route: Route; user: User; 
     <aside className="sidebar">
       <div className="brand">
         <img src="/brand/ascend-icon.png" alt="Ascend" className="brand-logo" />
-        <p className="brand-slogan">
-          Don’t count the days.
-          <br />
-          <span className="gradient-text">Make the days count.</span>
-        </p>
       </div>
 
       <nav className={`nav ${pill ? "has-pill" : ""}`} ref={navRef}>

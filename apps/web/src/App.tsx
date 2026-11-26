@@ -148,7 +148,7 @@ function Journey({ user, onSignOut }: { user: User; onSignOut: () => void }) {
               ) : journeyStart > todayISO() ? (
                 <BeforeDayOne start={journeyStart} name={user.name} />
               ) : (
-                <Home start={journeyStart} />
+                <Home start={journeyStart} name={user.name ?? ""} />
               )}
             </div>
           </Suspense>

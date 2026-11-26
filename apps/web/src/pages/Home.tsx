@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { GoalsList, HabitsList, LockedFeature, TasksList } from "../components/DayPlan";
 import { JourneyLine } from "../components/JourneyLine";
 import { EvolutionCard, LevelsModal } from "../components/Levels";
-import { PenLine, Target } from "lucide-react";
+import { Crown, Flame, Lock, Moon, PenLine, Sparkles, Sprout, Target, Trophy } from "lucide-react";
 import { DatePicker } from "../components/DatePicker";
 import { FutureChip } from "../components/FutureYou";
 import { GOAL_ICON_SET } from "../components/Icons";
@@ -17,8 +17,9 @@ import { HABIT_ICONS, activeHabits, dayStats, habitSlotsFor, type Goal, type Hab
 
 const RANGES = [7, 30, 90] as const;
 
-export function Home({ start }: { start: string }) {
+export function Home({ start, name }: { start: string; name: string }) {
   const today = todayISO();
+  const firstName = name.trim().split(/\s+/)[0] ?? "";
   const { data, actions } = useJourney();
   const { habits, tasks, goals, redeems, habitLog: log } = data;
   const { birthday, startSlots } = data.profile;
@@ -101,11 +102,10 @@ export function Home({ start }: { start: string }) {
   return (
     <div className="home">
       <header className="page-header">
-        <p className="eyebrow">{formatLong(today)}</p>
+        <p className="home-date">{formatLong(today)}</p>
         <h1>
-          Don’t count the days.
-          <br />
-          <span className="gradient-text">Make the days count.</span>
+          Hey{firstName ? ", " : " "}
+          <span className="gradient-text">{firstName || "there"}</span>.
         </h1>
         <FutureChip future={data.profile.future} age={birthday ? ageOn(birthday, today) : null} />
         {mainGoal && (
@@ -171,14 +171,18 @@ export function Home({ start }: { start: string }) {
                 </div>
               </div>
               <div className="ov">
-                <span className="ov-icon emoji">🔥</span>
+                <span className="ov-icon flame">
+                  <Flame size={22} aria-hidden="true" />
+                </span>
                 <div>
                   <strong>{streak}</strong>
                   <span>Day streak</span>
                 </div>
               </div>
               <div className="ov">
-                <span className="ov-icon emoji">🏆</span>
+                <span className="ov-icon gold">
+                  <Trophy size={21} aria-hidden="true" />
+                </span>
                 <div>
                   <strong>+{sel.xp}</strong>
                   <span>XP {selected === today ? "today" : "this day"}</span>
@@ -317,7 +321,7 @@ export function Home({ start }: { start: string }) {
                       title={open ? undefined : `Unlocks at Level ${levelFor((u) => u.statsRanges.includes(r))}`}
                       onClick={() => setRange(r)}
                     >
-                      {open ? "" : "🔒 "}
+                      {open ? null : <Lock size={11} aria-hidden="true" className="seg-lock" />}
                       {r}D
                     </button>
                   );
@@ -369,15 +373,15 @@ function useProgressToast(state: JourneyState, habits: Habit[]) {
     const seen = p.date === day?.date ? p.events : 0;
     let next: { kind: string; text: string } | null = null;
 
-    if (state.tier.level > p.tier) next = { kind: "tier", text: `🦋 You evolved into ${state.tier.name}! ${state.tier.meaning}` };
+    if (state.tier.level > p.tier) next = { kind: "tier", text: `You evolved into ${state.tier.name}! ${state.tier.meaning}` };
     else {
       const ms = events.slice(seen).find((e) => e.type === "milestone");
       if (ms?.type === "milestone") {
         const name = habits.find((h) => h.id === ms.habitId)?.name ?? "Habit";
-        next = { kind: "milestone", text: `🌱 “${name}” is ${ms.label.toLowerCase()}! +${ms.xp.toLocaleString()} XP` };
+        next = { kind: "milestone", text: `“${name}” is ${ms.label.toLowerCase()}! +${ms.xp.toLocaleString()} XP` };
       }
     }
-    if (!next && state.level > p.level) next = { kind: "level", text: `⬆ Level up! You reached Level ${state.level}` };
+    if (!next && state.level > p.level) next = { kind: "level", text: `Level up! You reached Level ${state.level}` };
 
     prev.current = { level: state.level, tier: state.tier.level, events: events.length, date: day?.date };
     if (!next) return;
@@ -390,21 +394,21 @@ function useProgressToast(state: JourneyState, habits: Habit[]) {
 }
 
 function Encouragement({ delta, todayScore, onContinue }: { delta: number | null; todayScore: number; onContinue: () => void }) {
-  const [icon, title, body] =
+  const [Icon, title, body] =
     todayScore >= 1
-      ? ["👑", "Perfect day!", "Everything done. Your wings grow stronger."]
+      ? [Crown, "Perfect day!", "Everything done. Your wings grow stronger."]
       : delta === null
-        ? ["🌱", "Your journey starts now", "Check off your first habit and start your transformation."]
+        ? [Sprout, "Your journey starts now", "Check off your first habit and start your transformation."]
         : delta >= 5
-          ? ["👑", "You’re doing amazing!", "Keep up the great work and reach new heights."]
+          ? [Crown, "You’re doing amazing!", "Keep up the great work and reach new heights."]
           : delta > -5
-            ? ["🦋", "Steady and strong", "Every change starts in the cocoon."]
-            : ["🌙", "Every butterfly rests", "Pick one habit today and get back on track."];
+            ? [Sparkles, "Steady and strong", "Every change starts in the cocoon."]
+            : [Moon, "Every butterfly rests", "Pick one habit today and get back on track."];
 
   return (
     <div className="encourage">
       <span className="encourage-icon" aria-hidden="true">
-        {icon}
+        <Icon size={26} />
       </span>
       <p className="encourage-title">{title}</p>
       <p className="muted center">{body}</p>

@@ -1,3 +1,4 @@
+import { Lock, LockOpen } from "lucide-react";
 import {
   HABIT_MILESTONES,
   SECOND_CHANCE,
@@ -102,14 +103,14 @@ export function EvolutionCard({ state, momentum, onOpen }: { state: JourneyState
           </ul>
           {coming.length > 0 && (
             <p className="unlock-line">
-              <span aria-hidden="true">🔓</span> Next unlocks: {coming.map((u) => `${u.label} (Lv ${u.level})`).join(" · ")}
+              <LockOpen size={13} aria-hidden="true" className="inline-ico" /> Next unlocks: {coming.map((u) => `${u.label} (Lv ${u.level})`).join(" · ")}
             </p>
           )}
         </div>
       )}
 
       <button className="primary-btn wide" onClick={onOpen}>
-        🦋 See all levels →
+        See all levels →
       </button>
       <p className="muted small center">{state.xp.toLocaleString()} XP earned in total</p>
     </section>
@@ -178,7 +179,15 @@ export function LevelsModal({ state, onClose }: { state: JourneyState; onClose: 
                 <span className="lc-level">Level {t.level}</span>
                 <span className="lc-name">{t.name}</span>
                 <span className={`lc-status ${status}`}>
-                  {status === "completed" ? "✓ Completed" : status === "current" ? "✦ You are here" : "🔒 Locked"}
+                  {status === "completed" ? (
+                    "✓ Completed"
+                  ) : status === "current" ? (
+                    "✦ You are here"
+                  ) : (
+                    <>
+                      <Lock size={11} aria-hidden="true" className="inline-ico" /> Locked
+                    </>
+                  )}
                 </span>
               </button>
             );

@@ -1,4 +1,5 @@
 import { XP, habitXp, type HabitProgress } from "@ascend/shared";
+import { Flame, Lock, Trophy } from "lucide-react";
 import { useState } from "react";
 import type { Goal, Habit, Task } from "../lib/progress";
 import { HabitIcon } from "./Icons";
@@ -54,7 +55,9 @@ export function HabitsList(p: HabitsProps) {
                   {prog?.reached.length ? <span className={`stage-tag ${prog.reached[prog.reached.length - 1]}`}>{label(prog.reached[prog.reached.length - 1])}</span> : null}
                 </span>
                 <span className="item-meta">
-                  <span title="Current streak">🔥 {prog?.streak ?? 0} day streak</span>
+                  <span title="Current streak" className="meta-ico">
+                    <Flame size={13} aria-hidden="true" /> {prog?.streak ?? 0} day streak
+                  </span>
                   {prog?.next && (
                     <span className="next-ms" title={`${prog.next.label}: done on ${prog.next.need} of the last ${prog.next.window} days`}>
                       <span className="mini-bar">
@@ -86,7 +89,7 @@ export function HabitsList(p: HabitsProps) {
       {p.mode === "today" &&
         (full ? (
           <p className="slot-lock">
-            🔒 {p.slots.used}/{p.slots.max} habit slots used.
+            <Lock size={13} aria-hidden="true" className="inline-ico" /> {p.slots.used}/{p.slots.max} habit slots used.
             {p.slots.nextAt ? ` Your next slot unlocks at Level ${p.slots.nextAt}.` : ""} Focus on making these stick.
           </p>
         ) : (
@@ -189,7 +192,7 @@ export function GoalsList(p: GoalsProps) {
             <li key={g.id} className="item goal">
               <CheckButton done={false} disabled={false} onClick={() => p.onAchieve(g.id)} label={g.title} reason="" />
               <span className="habit-icon" aria-hidden="true">
-                🏆
+                <Trophy size={18} />
               </span>
               <div className="item-body">
                 <span className="item-title">{g.title}</span>
@@ -215,7 +218,7 @@ export function GoalsList(p: GoalsProps) {
               reason="Achieved goals stay achieved"
             />
             <span className="habit-icon" aria-hidden="true">
-              🏆
+              <Trophy size={18} />
             </span>
             <div className="item-body">
               <span className="item-title">{g.title}</span>
@@ -223,7 +226,7 @@ export function GoalsList(p: GoalsProps) {
                 <span>Achieved {new Date(g.achievedAt + "T00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
               </span>
             </div>
-            <span className="xp-chip earned">🏆</span>
+            <span className="xp-chip earned">Achieved</span>
           </li>
         ))}
       </ul>
@@ -238,7 +241,7 @@ export function LockedFeature({ title, level, stage, children }: { title: string
   return (
     <div className="locked-feature">
       <span className="lock-icon" aria-hidden="true">
-        🔒
+        <Lock size={20} />
       </span>
       <div>
         <p className="locked-title">
